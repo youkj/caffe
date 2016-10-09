@@ -75,6 +75,11 @@ void ConvThread<Dtype>::ConvForward() {
 
   shared_ptr<Net<Dtype> > conv_net = pconv->net();
   conv_net->ClearParamDiffs();
+  // set conv_net with new BN blobs
+  for (int i = 0; i < bn_layers_idx_.size(); ++i) {
+    ParamHelper<Dtype>::CopyDataFromNet(conv_net, param_solver_->net(), bn_layers_idx_[i]);
+//    LOG(INFO) << "idx: " << bn_layers_idx_[i]<< ", type: " << conv_net->layers()[bn_layers_idx_[i]]->type();
+  }
   conv_net->ForwardPrefilled();
 
   // notify the param thread
@@ -90,6 +95,7 @@ void ConvThread<Dtype>::ConvForward() {
 
   this->SendMsg(m);
   NodeEnv::Instance()->PutSolver(conv_id, pconv);
+//  LOG(INFO) << "test0..................";
 }
 
 
@@ -124,10 +130,33 @@ void ConvThread<Dtype>::SendLayer(int layer_id) {
 }
 
 template <typename Dtype>
+void ConvThread<Dtype>::SendBN(int layer_id) {
+  shared_ptr<Msg> m(new Msg());
+  m->set_src(this->GetWorkerId());
+  m->set_dst(ROOT_THREAD_ID);
+  m->set_type(PUT_BN);
+
+  m->AppendData(&layer_id, sizeof(layer_id));
+
+  const string& layer_name = param_solver_->net()->layer_names()[layer_id];
+  vector<string> name_vec;
+  name_vec.push_back(layer_name);
+
+  ParamHelper<Dtype>::CopyParamDataToMsg(param_solver_->net(), name_vec, m);
+
+  LOG(INFO) << " BN State 1......";
+  this->SendMsg(m);
+}
+
+template <typename Dtype>
 void ConvThread<Dtype>::BackwardLayer(WorkerSolver<Dtype> *psolver,
                                       int layer_id) {
   shared_ptr<Net<Dtype> > conv_net = psolver->net();
   conv_net->BackwardFromTo(layer_id, layer_id);
+  const std::string& type = conv_net->layers()[layer_id]->type();
+  if (type == "BatchNorm") { // || type == "MKLBatchNorm"
+      ParamHelper<Dtype>::AddDataFromNet(param_solver_->net(), conv_net, layer_id);
+  }
   ParamHelper<Dtype>::AddDiffFromNet(param_solver_->net(), conv_net, layer_id);
 }
 
@@ -145,6 +174,13 @@ void ConvThread<Dtype>::SyncedBackward(WorkerSolver<Dtype> *prev_solver,
   // backward and sync per layer
   for (int i = layers.size() - 1; i >= prev_idx; i--) {
     conv_net->BackwardFromTo(i, i);
+    const std::string& type = layers[i]->type();
+    if (type == "BatchNorm") { // || type == "MKLBatchNorm"
+      ParamHelper<Dtype>::AddDataFromNet(param_net, conv_net, i);
+      ParamHelper<Dtype>::ScalData(param_net, (Dtype)(1.0 / num_sub_solvers_), i);
+
+      SendBN(i);
+    }
 
     ParamHelper<Dtype>::AddDiffFromNet(param_net, conv_net, i);
     ParamHelper<Dtype>::ScalDiff(param_net, (Dtype)(1.0 / num_sub_solvers_), i);
@@ -153,12 +189,23 @@ void ConvThread<Dtype>::SyncedBackward(WorkerSolver<Dtype> *prev_solver,
   }
 
   for (int i = prev_idx - 1; i >= 0; i--) {
+    const std::string& type = layers[i]->type();
     if (prev_solver != NULL) {
       prev_solver->net()->BackwardFromTo(i, i);
+      if (type == "BatchNorm") { // || type == "MKLBatchNorm"
+        ParamHelper<Dtype>::AddDataFromNet(param_net, prev_solver->net(), i);
+      }
       ParamHelper<Dtype>::AddDiffFromNet(param_net, prev_solver->net(), i);
     }
 
     conv_net->BackwardFromTo(i, i);
+    if (type == "BatchNorm") { // || type == "MKLBatchNorm"
+      ParamHelper<Dtype>::AddDataFromNet(param_net, conv_net, i);
+      ParamHelper<Dtype>::ScalData(param_net, (Dtype)(1.0 / num_sub_solvers_), i);
+
+      SendBN(i);
+    }
+    
     ParamHelper<Dtype>::AddDiffFromNet(param_net, conv_net, i);
     ParamHelper<Dtype>::ScalDiff(param_net, (Dtype)(1.0 / num_sub_solvers_), i);
 
@@ -182,6 +229,10 @@ void ConvThread<Dtype>::ConvBackward(shared_ptr<Msg> m) {
     conv_net->BackwardFromTo(i, i);
     ParamHelper<Dtype>::AddDiffFromNet(param_solver_->net(), conv_net, i);
   }
+  // add BN blobs 
+  for (int i = 0; i < bn_layers_idx_.size(); ++i) {
+    ParamHelper<Dtype>::AddDataFromNet(param_solver_->net(), conv_net, bn_layers_idx_[i]);
+  }
 
   NodeEnv::Instance()->DeleteSolver(m->conv_id());
   NodeEnv::Instance()->PushFreeSolver(pconv);
@@ -201,8 +252,19 @@ void ConvThread<Dtype>::Run() {
   const SolverParameter& solver_param = NodeEnv::Instance()->SolverParam();
   param_solver_ = (WorkerSolver<Dtype> *)this->NewSolver(root_solver,
                                                          solver_param);
+  
+  const vector<shared_ptr<Layer<Dtype> > >& layers = param_solver_->net()->layers();
+  for (int i = 0; i < layers.size(); i++) {
+    const std::string& type = layers[i]->type();
+  //  LOG(INFO) << "layer " << type <<", blob size:" << layers[i]->blobs().size();
+    if (type == "BatchNorm") { // || type == "MKLBatchNorm"
+        bn_layers_idx_.push_back(i);
+    }
+  }
+  LOG(INFO) << "bn layer size:" << bn_layers_idx_.size();
 
   while (!this->must_stop()) {
+       
     for (int i = 0; i < num_sub_solvers_; i++) {
       ConvForward();
     }
@@ -227,12 +289,14 @@ void ConvThread<Dtype>::Run() {
       if (num_bwd < num_sub_solvers_ - 2) {
         ConvBackward(r);
         blocked_recv = true;
+        LOG(INFO) << "------------------------0, conv_id" << r->conv_id() << ","<<num_bwd;
         num_bwd++;
       } else if (num_sub_solvers_ >= 2 && num_bwd == num_sub_solvers_ - 2) {
         if (layer_idx >= num_layers - 1) {
           // init solver
           prev_solver = PrepareBwdSolver(r);
           prev_conv_id = r->conv_id();
+          LOG(INFO) << "***********prev_conv_id: " << prev_conv_id; 
           BackwardLayer(prev_solver, layer_idx);
 
           // blocked receive to check the opportunity to overlap
@@ -240,6 +304,7 @@ void ConvThread<Dtype>::Run() {
           layer_idx--;
         } else if (layer_idx < num_layers - 1 && layer_idx >= 0) {
           if (r != NULL) {
+            LOG(INFO) << "------------------------1, conv_id" << r->conv_id() << ","<<num_bwd<<","<< layer_idx;
             BackwardLayer(prev_solver, layer_idx);
             SyncedBackward(prev_solver, layer_idx, r);
             break;
@@ -255,6 +320,7 @@ void ConvThread<Dtype>::Run() {
           blocked_recv = true;
         }
       } else if (num_bwd == num_sub_solvers_ - 1) {
+      LOG(INFO) << "------------------------2, conv_id" << r->conv_id() << ","<< layer_idx;
         SyncedBackward(prev_solver, 0, r);
         num_bwd++;
       } else {
@@ -281,6 +347,7 @@ void ConvThread<Dtype>::Run() {
       }
       m = this->RecvMsg(true);
     }
+    // TODO: set BN blobs to param_solver
   }
 }
 
@@ -321,6 +388,38 @@ void ConvParamThread<Dtype>::SyncLayer(int layer_id) {
 }
 
 template <typename Dtype>
+void ConvParamThread<Dtype>::SyncBN(int layer_id) {
+  SGDSolver<Dtype> *root_solver = NULL;
+  root_solver = (SGDSolver<Dtype> *) NodeEnv::Instance()->GetRootSolver();
+  shared_ptr<Net<Dtype> > root_net = root_solver->net();
+  const string& layer_name = root_net->layer_names()[layer_id];
+
+  // check whether the PS can be updated
+  map<string, int>::iterator iter = layer_to_ps_id_.find(layer_name);
+
+  // there are split layers in caffe which are not in the layer database
+//  if (iter == layer_to_ps_id_.end()) {
+//    return;
+//  }
+
+  int ps_id = iter->second;
+
+  // Put BN to PS
+  shared_ptr<Msg> ps_msg(new Msg());
+  ps_msg->set_type(PUT_BN);
+  ps_msg->set_dst(ps_id);
+  ps_msg->set_src(NodeEnv::Instance()->ID());
+
+  vector<string> layer_vec;
+  layer_vec.push_back(layer_name);
+  ParamHelper<Dtype>::CopyParamDataToMsg(root_net, layer_vec, ps_msg);
+  
+  LOG(INFO) << " BN State 3......";
+
+  this->SendMsg(ps_msg);
+}
+
+template <typename Dtype>
 void ConvParamThread<Dtype>::SyncWithPS() {
   SGDSolver<Dtype> *root_solver = NULL;
   root_solver = (SGDSolver<Dtype> *) NodeEnv::Instance()->GetRootSolver();
@@ -353,6 +452,7 @@ void ConvParamThread<Dtype>::SendActivations() {
     pconv = ((SGDSolver<Dtype> **)fwd_msgs_[i]->ZmsgData(0))[0];
     net_vec.push_back(pconv->net());
   }
+  LOG(INFO) << "test1.........." << NodeEnv::Instance()->ID() << ", ID: " << fwd_msgs_[0]->conv_id() << ", worker num"<< this->GetWorkerNum();
 
   shared_ptr<Msg> m(new Msg());
 
@@ -393,7 +493,7 @@ void ConvParamThread<Dtype>::SendActivations() {
 template <typename Dtype>
 void ConvParamThread<Dtype>::ProcessForward(shared_ptr<Msg> m) {
   fwd_msgs_.push_back(m);
-
+  
   if (fwd_msgs_.size() == this->GetWorkerNum()) {
     SendActivations();
     fwd_msgs_.clear();
@@ -497,6 +597,23 @@ int ConvParamThread<Dtype>::PutGradient(shared_ptr<Msg> m) {
 }
 
 template <typename Dtype>
+int ConvParamThread<Dtype>::PutBN(shared_ptr<Msg> m) {
+  SGDSolver<Dtype> *root_solver = NULL;
+  root_solver = (SGDSolver<Dtype> *) NodeEnv::Instance()->GetRootSolver();
+  shared_ptr<Net<Dtype> > root_net = root_solver->net();
+
+  int layer_id = (reinterpret_cast<int *>(m->ZmsgData(0)))[0];
+
+  ParamHelper<Dtype>::AddDataFromMsg(root_net, m);
+  
+  LOG(INFO) << " BN State 2......";
+
+  SyncBN(layer_id);
+
+  return 0;
+}
+
+template <typename Dtype>
 int ConvParamThread<Dtype>::UpdateParam(shared_ptr<Msg> m) {
   map<int, int>::iterator map_iter = ps_id_map_.find(m->src());
   CHECK(map_iter != ps_id_map_.end());
@@ -570,9 +687,12 @@ void ConvParamThread<Dtype>::Run() {
       if (PutGradient(m) < 0) {
         return;
       }
+    } else if (m->type() == PUT_BN) {
+      PutBN(m);
     } else if (m->type() == PUT_PARAM) {
       UpdateParam(m);
     } else if (m->type() == FORWARD) {
+//    LOG(INFO) << "test1..................";
       ProcessForward(m);
     } else if (m->type() == BACKWARD) {
       ProcessBackward(m);

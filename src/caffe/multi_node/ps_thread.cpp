@@ -42,6 +42,17 @@ int PSThread<Dtype>::UpdateParam(shared_ptr<Msg> m) {
 }
 
 template <typename Dtype>
+int PSThread<Dtype>::UpdateBN(shared_ptr<Msg> m) {
+
+  CHECK_EQ(m->num_blobs(), 1) << "expect 1 blob";
+
+  ParamHelper<Dtype>::AddDataFromMsg(ps_solver_->net(), m);
+  LOG(INFO) << " BN State 4......";
+  // do not scale here
+  return 0;
+}
+
+template <typename Dtype>
 void PSThread<Dtype>::SendParam(shared_ptr<Net<Dtype> > net,
                                 const vector<string>& layer_names,
                                 int dst, int clock) {
@@ -95,13 +106,15 @@ int PSThread<Dtype>::SendUpdates(int layer_id) {
       num_updates++;
     }
   }
-
+//  LOG(INFO) << "layer: " << layer_id <<", num update: " << num_updates << ", total size:" << pmsg_vec->size();
   if (num_updates > 0) {
+    // TODO: scale blob, blob before gradient
     ParamHelper<Dtype>::ScalDiff(ps_solver_->net(),
                                  (Dtype)(1.0 / (Dtype)num_updates),
                                  layer_id);
     UpdateLayer(layer_id);
     BroadcastLayer(layer_id);
+    // TODO: here send param to convs, 
     updated_layers_++;
   }
 
@@ -180,6 +193,8 @@ void PSThread<Dtype>::Run() {
         this->SendExit();
         return;
       }
+    } else if (m->type() == PUT_BN) {
+      UpdateBN(m);
     } else if (m->type() == REGISTER_NODE) {
       RegisterNode(m);
     } else if (m->type() == GET_PARAM) {

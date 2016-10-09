@@ -53,6 +53,54 @@ class ParamHelper {
                         dst_params[i]->mutable_cpu_diff());
     }
   }
+  static void CopyDataFromNet(const shared_ptr<Net<Dtype> > dst_net,
+                             const shared_ptr<Net<Dtype> > src_net,
+                             int layer_id) {
+    shared_ptr<Layer<Dtype> > dst_layer = dst_net->layers()[layer_id];
+    vector<shared_ptr<Blob<Dtype> > >& dst_blobs = dst_layer->blobs();
+
+    shared_ptr<Layer<Dtype> > src_layer = src_net->layers()[layer_id];
+    vector<shared_ptr<Blob<Dtype> > >& src_blobs = src_layer->blobs();
+
+    CHECK_EQ(dst_blobs.size(), src_blobs.size());
+
+    for (int i = 0; i < src_blobs.size(); i++) {
+      CHECK_EQ(src_blobs[i]->count(), dst_blobs[i]->count());
+      BlasCopy(src_blobs[i]->count(), 
+               src_blobs[i]->cpu_data(),
+               dst_blobs[i]->mutable_cpu_data());
+    }
+  }
+  static void AddDataFromNet(const shared_ptr<Net<Dtype> > dst_net,
+                             const shared_ptr<Net<Dtype> > src_net,
+                             int layer_id) {
+    shared_ptr<Layer<Dtype> > dst_layer = dst_net->layers()[layer_id];
+    vector<shared_ptr<Blob<Dtype> > >& dst_blobs = dst_layer->blobs();
+
+    shared_ptr<Layer<Dtype> > src_layer = src_net->layers()[layer_id];
+    vector<shared_ptr<Blob<Dtype> > >& src_blobs = src_layer->blobs();
+
+    CHECK_EQ(dst_blobs.size(), src_blobs.size());
+
+    for (int i = 0; i < src_blobs.size(); i++) {
+      CHECK_EQ(src_blobs[i]->count(), dst_blobs[i]->count());
+      caffe_axpy<Dtype>(src_blobs[i]->count(), 1.0,
+                        src_blobs[i]->cpu_data(),
+                        dst_blobs[i]->mutable_cpu_data());
+    }
+  }
+  static void ScalData(const shared_ptr<Net<Dtype> > net,
+                       Dtype factor,
+                       int layer_id) {
+    shared_ptr<Layer<Dtype> > l = net->layers()[layer_id];
+    vector<shared_ptr<Blob<Dtype> > >& layer_blobs = l->blobs();
+
+    for (int i = 0; i < layer_blobs.size(); i++) {
+      caffe_scal(layer_blobs[i]->count(),
+                 factor,
+                 layer_blobs[i]->mutable_cpu_data());
+    }
+  }
 
   static void AddDiffFromNet(const shared_ptr<Net<Dtype> > dst_net,
                              const shared_ptr<Net<Dtype> > src_net,
@@ -163,6 +211,31 @@ class ParamHelper {
         caffe_axpy<Dtype>(pblob->count(), 1.0,
                          reinterpret_cast<Dtype *>(m->ZmsgData(m_idx)),
                          pblob->mutable_cpu_diff());
+      }
+    }
+  }
+
+  static void AddDataFromMsg(const shared_ptr<Net<Dtype> > dst_net,
+                             shared_ptr<Msg> m) {
+    for (int i = 0; i < m->num_blobs(); i++) {
+      const BlobInfo& bi = m->blob_info(i);
+
+      // a layer is stored as a blob in the message
+      const string& layer_name = bi.blob_name();
+      const shared_ptr<Layer<Dtype> > l = dst_net->layer_by_name(layer_name);
+
+      CHECK(l != NULL) << "Cannot find layer: " << layer_name;
+
+      CHECK_EQ(l->blobs().size(), bi.msg_index_size());
+
+      for (int j = 0; j < l->blobs().size(); j++) {
+        shared_ptr<Blob<Dtype> > pblob = l->blobs()[j];
+        int m_idx = bi.msg_index(j);
+
+        CHECK_EQ(pblob->count() * sizeof(Dtype), m->ZmsgSize(m_idx));
+        caffe_axpy<Dtype>(pblob->count(), 1.0,
+                         reinterpret_cast<Dtype *>(m->ZmsgData(m_idx)),
+                         pblob->mutable_cpu_data());
       }
     }
   }

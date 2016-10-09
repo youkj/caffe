@@ -123,12 +123,13 @@ enum MsgType {
   GET_PARAM       = 4;
   PUT_PARAM       = 5;
   PUT_GRADIENT    = 6;
-  FORWARD         = 7;
-  BACKWARD        = 8;
-  TRAIN_ITER      = 9;
-  UPDATE_CLOCK    = 10;
-  EXIT_TRAIN      = 11;
-  INVALID_MSG     = 12;
+  PUT_BN          = 7;
+  FORWARD         = 8;
+  BACKWARD        = 9;
+  TRAIN_ITER      = 10;
+  UPDATE_CLOCK    = 11;
+  EXIT_TRAIN      = 12;
+  INVALID_MSG     = 13;
 }
 
 message BlobInfo {

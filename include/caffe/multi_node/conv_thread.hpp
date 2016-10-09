@@ -65,6 +65,9 @@ class ConvThread : public WorkerThread<Dtype> {
   // inform the parameter thread to update layer i
   void SendLayer(int layer_id);
 
+  // inform the parameter thread to update BN layer i
+  void SendBN(int layer_id);
+
   // do forward for a layer
   void ForwardLayer(shared_ptr<Net<Dtype> > conv_net, int layer_id);
 
@@ -80,6 +83,9 @@ class ConvThread : public WorkerThread<Dtype> {
   // the pointer of solver which is used to store gradients
   WorkerSolver<Dtype> *param_solver_;
 
+  // index of bn layers
+  vector<int> bn_layers_idx_;
+  
  protected:
   int num_sub_solvers_;
 
@@ -145,6 +151,9 @@ class ConvParamThread : public WorkerThread<Dtype> {
   // sync one layer with PS
   void SyncLayer(int layer_id);
 
+  // sync one layer with PS
+  void SyncBN(int layer_id);
+
   virtual void Run();
 
  protected:
@@ -156,6 +165,9 @@ class ConvParamThread : public WorkerThread<Dtype> {
  protected:
   // update gradient
   int PutGradient(shared_ptr<Msg> m);
+
+  // update BN blobs
+  int PutBN(shared_ptr<Msg> m);
 
   // update parameter got from parameter server
   int UpdateParam(shared_ptr<Msg> m);
