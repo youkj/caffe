@@ -142,12 +142,14 @@ int PSThread<Dtype>::SendUpdates(int layer_id) {
 //  LOG(INFO) << "layer: " << layer_id <<", num update: " << num_updates << ", total size:" << pmsg_vec->size();
   if (num_updates > 0) {
     AvgBN(ps_solver_->net(), num_updates, layer_id);
+    
     ParamHelper<Dtype>::ScalDiff(ps_solver_->net(),
                                  (Dtype)(1.0 / (Dtype)num_updates),
                                  layer_id);
     UpdateLayer(layer_id);
     
-    // TODO: here send param to convs, 
+    // TODO: here send bn blobs to convs
+    
     BroadcastLayer(layer_id);
     updated_layers_++;
   }
@@ -161,6 +163,8 @@ int PSThread<Dtype>::SendUpdates(int layer_id) {
     #endif
 
     ps_solver_->net()->ClearParamDiffs();
+
+    // TODO: clear bn blobs
     updated_layers_ = 0;
     iter_++;
     ps_solver_->IncreaseIter();

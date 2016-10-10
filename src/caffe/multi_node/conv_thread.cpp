@@ -66,15 +66,20 @@ void ConvThread<Dtype>::ConvForward() {
   WorkerSolver<Dtype> *pconv = NULL;
   pconv = (WorkerSolver<Dtype> *)NodeEnv::Instance()->PopFreeSolver();
 
+  
+  Solver<Dtype> *root_solver = NULL;
+  root_solver = (Solver<Dtype> *)NodeEnv::Instance()->GetRootSolver();
+  LOG(INFO) << "bn root_solver blob.......0";
+  ParamHelper<Dtype>::PrintBN(root_solver->net(), 315);
+
+  
+
   if (NULL == pconv) {
     Solver<Dtype> *root_solver = NULL;
     root_solver = (Solver<Dtype> *)NodeEnv::Instance()->GetRootSolver();
     const SolverParameter& solver_param = NodeEnv::Instance()->SolverParam();
     pconv = (WorkerSolver<Dtype> *)this->NewSolver(root_solver, solver_param);
-    LOG(INFO) << "BN_Forward init bn root_solver blob.......";
-    ParamHelper<Dtype>::PrintBN(root_solver->net(), bn_layers_idx_[bn_layers_idx_.size()-1]);
   }
-
   shared_ptr<Net<Dtype> > conv_net = pconv->net();
   conv_net->ClearParamDiffs();
 
@@ -106,6 +111,9 @@ void ConvThread<Dtype>::ConvForward() {
   this->SendMsg(m);
   NodeEnv::Instance()->PutSolver(conv_id, pconv);
 //  LOG(INFO) << "test0..................";
+LOG(INFO) << "bn root_solver blob.......1";
+ParamHelper<Dtype>::PrintBN(root_solver->net(), 315);
+
 }
 
 
@@ -374,6 +382,11 @@ void ConvThread<Dtype>::Run() {
     
     // clear bn blob here?
 
+    LOG(INFO) << "bn param_solver before update.......";
+    ParamHelper<Dtype>::PrintBN(param_solver_->net(), bn_layers_idx_[bn_layers_idx_.size()-1]);
+    LOG(INFO) << "bn root_solver before update.......";
+    ParamHelper<Dtype>::PrintBN(root_solver->net(), bn_layers_idx_[bn_layers_idx_.size()-1]);
+
     // waiting for parameter update
     shared_ptr<Msg> m = this->RecvMsg(true);
     while (m->type() != PUT_PARAM) {
@@ -382,6 +395,11 @@ void ConvThread<Dtype>::Run() {
       }
       m = this->RecvMsg(true);
     }
+
+    LOG(INFO) << "bn param_solver after update.......";
+    ParamHelper<Dtype>::PrintBN(param_solver_->net(), bn_layers_idx_[bn_layers_idx_.size()-1]);
+    LOG(INFO) << "bn root_solver after update.......";
+    ParamHelper<Dtype>::PrintBN(root_solver->net(), bn_layers_idx_[bn_layers_idx_.size()-1]);
     // TODO: set BN blobs to param_solver
   }
 }
@@ -483,6 +501,12 @@ void ConvParamThread<Dtype>::SyncWithPS() {
 template <typename Dtype>
 void ConvParamThread<Dtype>::SendActivations() {
   vector<shared_ptr<Net<Dtype> > > net_vec;
+  Solver<Dtype> *root_solver = NULL;
+  root_solver = (Solver<Dtype> *)NodeEnv::Instance()->GetRootSolver();
+  LOG(INFO) << "bn root_solver blob.......2";
+  ParamHelper<Dtype>::PrintBN(root_solver->net(), 315);
+
+  
 
   // prepare the forward nets from conv_threads
   for (int i = 0; i < fwd_msgs_.size(); i++) {
@@ -526,6 +550,12 @@ void ConvParamThread<Dtype>::SendActivations() {
   shared_ptr<vector<shared_ptr<Msg> > > pvec;
   pvec.reset(new vector<shared_ptr<Msg> >(fwd_msgs_));
   conv_id_to_vec_[conv_id] = pvec;
+
+
+  LOG(INFO) << "bn root_solver blob.......3";
+  ParamHelper<Dtype>::PrintBN(root_solver->net(), 315);
+
+  
 }
 
 template <typename Dtype>
@@ -690,7 +720,7 @@ int ConvParamThread<Dtype>::UpdateParam(shared_ptr<Msg> m) {
   // clear the gradients of root net
   root_net->ClearParamDiffs();
 
-  // clear the bn blobs ?
+  // TODO: clear the bn blobs ?
   
 
   // notify the worker threads
