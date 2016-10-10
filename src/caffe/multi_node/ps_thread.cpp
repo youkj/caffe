@@ -47,9 +47,42 @@ int PSThread<Dtype>::UpdateBN(shared_ptr<Msg> m) {
   CHECK_EQ(m->num_blobs(), 1) << "expect 1 blob";
 
   ParamHelper<Dtype>::AddDataFromMsg(ps_solver_->net(), m);
-  LOG(INFO) << " BN State 4......";
   // do not scale here
+
+  // check mean and var
+
+  const BlobInfo& bi = m->blob_info(0);
+  const string& layer_name = bi.blob_name();
+  LOG(INFO) << "BN State 4......PS recv, before avg client, layer name: " << layer_name;
+//  LOG(INFO) << "num of blobs from msg:" << m->num_blobs() << ";should be 1";
+  ParamHelper<Dtype>::PrintBN(ps_solver_->net(), layer_name);
+
   return 0;
+}
+
+template <typename Dtype>
+void PSThread<Dtype>::AvgBN(const shared_ptr<Net<Dtype> > net,
+                               int num, int layer_id) {
+  shared_ptr<Layer<Dtype> > layer = net->layers()[layer_id];
+  const std::string& type = layer->type();
+  
+  if (type == "BatchNorm") { // || type == "MKLBatchNorm"
+    vector<shared_ptr<Blob<Dtype> > >& bn_blobs = layer->blobs();
+    
+    // check bn mean data
+    LOG(INFO) << "before avg client, layer idx:" << layer_id;
+    ParamHelper<Dtype>::PrintBN(net, layer_id);
+    
+    for (int i = 0; i < bn_blobs.size(); i++) {
+      caffe_scal(bn_blobs[i]->count(), (Dtype)(1.0 / (Dtype)num),
+                 bn_blobs[i]->mutable_cpu_data());
+    }
+
+    // check bn mean dat
+    LOG(INFO) << "after avg client, layer idx:" << layer_id;
+    ParamHelper<Dtype>::PrintBN(net, layer_id);
+    
+  }
 }
 
 template <typename Dtype>
@@ -108,13 +141,14 @@ int PSThread<Dtype>::SendUpdates(int layer_id) {
   }
 //  LOG(INFO) << "layer: " << layer_id <<", num update: " << num_updates << ", total size:" << pmsg_vec->size();
   if (num_updates > 0) {
-    // TODO: scale blob, blob before gradient
+    AvgBN(ps_solver_->net(), num_updates, layer_id);
     ParamHelper<Dtype>::ScalDiff(ps_solver_->net(),
                                  (Dtype)(1.0 / (Dtype)num_updates),
                                  layer_id);
     UpdateLayer(layer_id);
-    BroadcastLayer(layer_id);
+    
     // TODO: here send param to convs, 
+    BroadcastLayer(layer_id);
     updated_layers_++;
   }
 

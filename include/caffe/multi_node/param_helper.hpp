@@ -89,6 +89,33 @@ class ParamHelper {
                         dst_blobs[i]->mutable_cpu_data());
     }
   }
+
+  static void PrintBNBlobs(const vector<shared_ptr<Blob<Dtype> > >& bn_blobs) {
+    if (bn_blobs.size() < 3) {
+      LOG(WARNING) << "no bn blobs";
+      return;
+    }
+    const shared_ptr<Blob<Dtype> >  m = bn_blobs[0];
+    const shared_ptr<Blob<Dtype> >  v = bn_blobs[1];
+    const shared_ptr<Blob<Dtype> >  f = bn_blobs[2];
+    
+    LOG(INFO) << "m[0]: " << m->cpu_data()[0] 
+      << ", m[" << m->count()-1 << "]: " << m->cpu_data()[m->count()-1];
+    LOG(INFO) << "v[0]: " << v->cpu_data()[0] 
+      << ", v[" << v->count()-1 << "]: " << v->cpu_data()[v->count()-1];
+    LOG(INFO) << "f[0]: " << f->cpu_data()[0]
+      << ", f[" << f->count()-1 << "]: " << f->cpu_data()[f->count()-1];
+  }
+  
+  static void PrintBN(const shared_ptr<Net<Dtype> > net, int layer_id) {
+    PrintBNBlobs(net->layers()[layer_id]->blobs());
+  }
+
+  static void PrintBN(const shared_ptr<Net<Dtype> > net, const string& layer_name) {
+    const shared_ptr<Layer<Dtype> > bn = net->layer_by_name(layer_name);
+    PrintBNBlobs(bn->blobs());
+  }
+
   static void ScalData(const shared_ptr<Net<Dtype> > net,
                        Dtype factor,
                        int layer_id) {

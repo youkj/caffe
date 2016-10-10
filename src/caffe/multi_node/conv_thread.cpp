@@ -71,15 +71,25 @@ void ConvThread<Dtype>::ConvForward() {
     root_solver = (Solver<Dtype> *)NodeEnv::Instance()->GetRootSolver();
     const SolverParameter& solver_param = NodeEnv::Instance()->SolverParam();
     pconv = (WorkerSolver<Dtype> *)this->NewSolver(root_solver, solver_param);
+    LOG(INFO) << "BN_Forward init bn root_solver blob.......";
+    ParamHelper<Dtype>::PrintBN(root_solver->net(), bn_layers_idx_[bn_layers_idx_.size()-1]);
   }
 
   shared_ptr<Net<Dtype> > conv_net = pconv->net();
   conv_net->ClearParamDiffs();
+
+  LOG(INFO) << "BN_Forward init bn param_solver blob.......";
+  ParamHelper<Dtype>::PrintBN(param_solver_->net(), bn_layers_idx_[bn_layers_idx_.size()-1]);
+    
   // set conv_net with new BN blobs
   for (int i = 0; i < bn_layers_idx_.size(); ++i) {
     ParamHelper<Dtype>::CopyDataFromNet(conv_net, param_solver_->net(), bn_layers_idx_[i]);
 //    LOG(INFO) << "idx: " << bn_layers_idx_[i]<< ", type: " << conv_net->layers()[bn_layers_idx_[i]]->type();
   }
+
+  LOG(INFO) << "BN_Forward init bn conv blob.......";
+  ParamHelper<Dtype>::PrintBN(conv_net, bn_layers_idx_[bn_layers_idx_.size()-1]);
+  
   conv_net->ForwardPrefilled();
 
   // notify the param thread
@@ -144,7 +154,11 @@ void ConvThread<Dtype>::SendBN(int layer_id) {
 
   ParamHelper<Dtype>::CopyParamDataToMsg(param_solver_->net(), name_vec, m);
 
-  LOG(INFO) << " BN State 1......";
+  // check bn mean data
+  LOG(INFO) << "BN State 1......";
+  LOG(INFO) << "send to param conv, after avg solver, layer idx: " << layer_id ;
+  ParamHelper<Dtype>::PrintBN(param_solver_->net(), layer_id);
+  
   this->SendMsg(m);
 }
 
@@ -177,7 +191,16 @@ void ConvThread<Dtype>::SyncedBackward(WorkerSolver<Dtype> *prev_solver,
     const std::string& type = layers[i]->type();
     if (type == "BatchNorm") { // || type == "MKLBatchNorm"
       ParamHelper<Dtype>::AddDataFromNet(param_net, conv_net, i);
+
+      // check mean and var
+      LOG(INFO) << "BN State 0......";
+      LOG(INFO) << "backward compute, before avg solver, layer idx:" << i;
+      ParamHelper<Dtype>::PrintBN(param_net, i);
+
       ParamHelper<Dtype>::ScalData(param_net, (Dtype)(1.0 / num_sub_solvers_), i);
+
+      LOG(INFO) << "backward compute, after avg solver, layer idx:" << i;
+      ParamHelper<Dtype>::PrintBN(param_net, i);
 
       SendBN(i);
     }
@@ -201,7 +224,17 @@ void ConvThread<Dtype>::SyncedBackward(WorkerSolver<Dtype> *prev_solver,
     conv_net->BackwardFromTo(i, i);
     if (type == "BatchNorm") { // || type == "MKLBatchNorm"
       ParamHelper<Dtype>::AddDataFromNet(param_net, conv_net, i);
+
+      // check mean and var
+      LOG(INFO) << "BN State 0......";
+      LOG(INFO) << "backward compute, before avg solver, layer idx:" << i;
+      ParamHelper<Dtype>::PrintBN(param_net, i);
+
       ParamHelper<Dtype>::ScalData(param_net, (Dtype)(1.0 / num_sub_solvers_), i);
+
+      LOG(INFO) << "backward compute, after avg solver, layer idx:" << i;
+      ParamHelper<Dtype>::PrintBN(param_net, i);
+
 
       SendBN(i);
     }
@@ -338,6 +371,8 @@ void ConvThread<Dtype>::Run() {
     // ParamHelper<Dtype>::PrintDiff(param_solver_->net());
 
     param_solver_->net()->ClearParamDiffs();
+    
+    // clear bn blob here?
 
     // waiting for parameter update
     shared_ptr<Msg> m = this->RecvMsg(true);
@@ -414,7 +449,10 @@ void ConvParamThread<Dtype>::SyncBN(int layer_id) {
   layer_vec.push_back(layer_name);
   ParamHelper<Dtype>::CopyParamDataToMsg(root_net, layer_vec, ps_msg);
   
-  LOG(INFO) << " BN State 3......";
+  // check bn mean data
+  LOG(INFO) << "BN State 3......";
+  LOG(INFO) << "Send to PS, after avg solver, layer name: " << layer_name;
+  ParamHelper<Dtype>::PrintBN(root_net, layer_name);
 
   this->SendMsg(ps_msg);
 }
@@ -452,7 +490,7 @@ void ConvParamThread<Dtype>::SendActivations() {
     pconv = ((SGDSolver<Dtype> **)fwd_msgs_[i]->ZmsgData(0))[0];
     net_vec.push_back(pconv->net());
   }
-  LOG(INFO) << "test1.........." << NodeEnv::Instance()->ID() << ", ID: " << fwd_msgs_[0]->conv_id() << ", worker num"<< this->GetWorkerNum();
+  LOG(INFO) << "test1.........." << NodeEnv::Instance()->ID() << ", ID: " << fwd_msgs_[0]->conv_id() << ", worker num:"<< this->GetWorkerNum();
 
   shared_ptr<Msg> m(new Msg());
 
@@ -604,9 +642,14 @@ int ConvParamThread<Dtype>::PutBN(shared_ptr<Msg> m) {
 
   int layer_id = (reinterpret_cast<int *>(m->ZmsgData(0)))[0];
 
+//  ParamHelper<Dtype>::CopyDataFromMsg(root_net, m);
+
   ParamHelper<Dtype>::AddDataFromMsg(root_net, m);
-  
-  LOG(INFO) << " BN State 2......";
+    
+  // check bn mean data
+  LOG(INFO) << "BN State 2......";
+  LOG(INFO) << "conv recv, after avg solver, layer idx: " << layer_id;
+  ParamHelper<Dtype>::PrintBN(root_solver->net(), layer_id);
 
   SyncBN(layer_id);
 
@@ -646,6 +689,9 @@ int ConvParamThread<Dtype>::UpdateParam(shared_ptr<Msg> m) {
 
   // clear the gradients of root net
   root_net->ClearParamDiffs();
+
+  // clear the bn blobs ?
+  
 
   // notify the worker threads
   shared_ptr<Msg> notify(new Msg());
