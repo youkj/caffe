@@ -67,13 +67,22 @@ class ConvThread : public WorkerThread<Dtype> {
 
   // inform the parameter thread to update BN layer i
   void SendBN(int layer_id);
+  
+  // inform the parameter thread to update all BN layers
+  void SendBN();
 
+  void ScalBN(vector<shared_ptr<Blob<Dtype> > >& bn_blobs,
+                  Dtype factor);
+  void SetUpBN(const shared_ptr<Net<Dtype> > net,
+                   vector<shared_ptr<Blob<Dtype> > >& bn_blobs);
+  void ClearBN(vector<shared_ptr<Blob<Dtype> > >& bn_blobs);
+  
   // do forward for a layer
   void ForwardLayer(shared_ptr<Net<Dtype> > conv_net, int layer_id);
 
   // do backward for a layer
   void BackwardLayer(WorkerSolver<Dtype> *psolver, int layer_id);
-
+  
  protected:
   typedef unordered_map<int64_t, shared_ptr<vector<shared_ptr<Msg> > > >
                                                                       MsgMap;
@@ -83,9 +92,18 @@ class ConvThread : public WorkerThread<Dtype> {
   // the pointer of solver which is used to store gradients
   WorkerSolver<Dtype> *param_solver_;
 
+  // has bn layers
+  bool has_bn_layers_;
+  
   // index of bn layers
   vector<int> bn_layers_idx_;
   
+  // blobs of bn layers
+  vector<shared_ptr<Blob<Dtype> > > bn_layers_blobs_;
+
+  // blobs of bn layers
+  vector<shared_ptr<Blob<Dtype> > > bn_layers_blobs_avg_;
+        
  protected:
   int num_sub_solvers_;
 

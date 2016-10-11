@@ -141,6 +141,7 @@ int PSThread<Dtype>::SendUpdates(int layer_id) {
   }
 //  LOG(INFO) << "layer: " << layer_id <<", num update: " << num_updates << ", total size:" << pmsg_vec->size();
   if (num_updates > 0) {
+    LOG(INFO) << "ps_layer_size: " << ps_solver_->net()->layers().size();
     AvgBN(ps_solver_->net(), num_updates, layer_id);
     
     ParamHelper<Dtype>::ScalDiff(ps_solver_->net(),
