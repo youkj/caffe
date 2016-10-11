@@ -130,6 +130,7 @@ class ConvParamThread : public WorkerThread<Dtype> {
     ps_updates_.resize(ps_ids_.size());
 
     // init PS maps
+    LOG(INFO) << "ps_idx size: " << ps_ids_.size();
     for (int i = 0; i < ps_ids_.size(); i++) {
       ps_id_map_[ps_ids_[i]] = i;
       const vector<string>& ps_layers =
@@ -169,8 +170,8 @@ class ConvParamThread : public WorkerThread<Dtype> {
   // sync one layer with PS
   void SyncLayer(int layer_id);
 
-  // sync one layer with PS
-  void SyncBN(int layer_id);
+  // sync bn to PS
+  void SyncBN();
 
   virtual void Run();
 
@@ -185,7 +186,7 @@ class ConvParamThread : public WorkerThread<Dtype> {
   int PutGradient(shared_ptr<Msg> m);
 
   // update BN blobs
-  int PutBN(shared_ptr<Msg> m);
+  void PutBN(shared_ptr<Msg> m);
 
   // update parameter got from parameter server
   int UpdateParam(shared_ptr<Msg> m);
@@ -217,6 +218,8 @@ class ConvParamThread : public WorkerThread<Dtype> {
 
   // record the number of updates from conv. workers
   vector<int> layer_updates_;
+
+  int bn_updates_;
 
   vector<shared_ptr<Msg> > fwd_msgs_;
 

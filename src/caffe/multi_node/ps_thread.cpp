@@ -44,9 +44,7 @@ int PSThread<Dtype>::UpdateParam(shared_ptr<Msg> m) {
 template <typename Dtype>
 int PSThread<Dtype>::UpdateBN(shared_ptr<Msg> m) {
 
-  CHECK_EQ(m->num_blobs(), 1) << "expect 1 blob";
-
-  ParamHelper<Dtype>::AddDataFromMsg(ps_solver_->net(), m);
+  ParamHelper<Dtype>::AddBNFromMsg(ps_solver_->net(), m);
   // do not scale here
 
   // check mean and var
@@ -141,7 +139,7 @@ int PSThread<Dtype>::SendUpdates(int layer_id) {
   }
 //  LOG(INFO) << "layer: " << layer_id <<", num update: " << num_updates << ", total size:" << pmsg_vec->size();
   if (num_updates > 0) {
-    LOG(INFO) << "ps_layer_size: " << ps_solver_->net()->layers().size();
+//    LOG(INFO) << "ps_layer_size: " << ps_solver_->net()->layers().size();
     AvgBN(ps_solver_->net(), num_updates, layer_id);
     
     ParamHelper<Dtype>::ScalDiff(ps_solver_->net(),
@@ -165,7 +163,9 @@ int PSThread<Dtype>::SendUpdates(int layer_id) {
 
     ps_solver_->net()->ClearParamDiffs();
 
-    // TODO: clear bn blobs
+    // clear bn blobs
+    ParamHelper<Dtype>::ClearBNBlobs(ps_solver_->net());
+
     updated_layers_ = 0;
     iter_++;
     ps_solver_->IncreaseIter();

@@ -95,31 +95,70 @@ class ParamHelper {
     }
   }
 
-  static void CopyBNFromMsg(const shared_ptr<Net<Dtype> > net, 
+  static void CopyBNFromMsg(const shared_ptr<Net<Dtype> > dst_net, 
                                     shared_ptr<Msg> m) {
-    for (int i = 0; i < m->num_blobs(); i++) {
-      const BlobInfo& bi = m->blob_info(i);
-      const string& layer_name = bi.blob_name();
-      const shared_ptr<Layer<Dtype> > l = net->layer_by_name(layer_name);
+    CopyParamFromMsg(dst_net, m, COPY_DATA);
+  }
 
-      CHECK(l != NULL) << "Cannot find layer: " << layer_name;
+  static void CopyBNToMsg(const shared_ptr<Net<Dtype> > src_net, 
+                                 shared_ptr<Msg> m) {
+    const vector<shared_ptr<Layer<Dtype> > >& layers = src_net->layers();
+    const vector<string>& layer_names = src_net->layer_names();
+    for (int i = 0; i < layer_names.size(); i++) {
+      const string& layer_name = layer_names[i];
+      const string& type = layers[i]->type();
+      if (type != "BatchNorm") { // && type != "MKLBatchNorm"
+        continue;
+      }
+      const shared_ptr<Layer<Dtype> > l = src_net->layer_by_name(layer_name);
+      for (int j = 0; j < l->blobs().size(); j++) {
+        shared_ptr<Blob<Dtype> > pblob = l->blobs()[j];
+        m->AppendBlob(layer_name,
+                      pblob->cpu_data(),
+                      pblob->count() * sizeof(Dtype));
+      }
+    }
+  }
 
-      CHECK_EQ(l->blobs().size(), 3);
-
-      vector<shared_ptr<Blob<Dtype> > >& blobs = l->blobs();
-      int m_idx = bi.msg_index(0);
-      const int count = blobs[0]->count();
-      CHECK_EQ((count*2+1) * sizeof(Dtype), m->ZmsgSize(m_idx));
-      BlasCopy(count, reinterpret_cast<Dtype *>(m->ZmsgData(m_idx)),
-               blobs[0]->mutable_cpu_diff());
-      BlasCopy(count, reinterpret_cast<Dtype *>(m->ZmsgData(m_idx)) + count,
-               blobs[1]->mutable_cpu_diff());
-      BlasCopy(1, reinterpret_cast<Dtype *>(m->ZmsgData(m_idx)) + count*2,
-               blobs[2]->mutable_cpu_diff());
-
+  static void ClearBNBlobs(const shared_ptr<Net<Dtype> > net) {
+    const vector<shared_ptr<Layer<Dtype> > >& layers = net->layers();
+    for (int i = 0; i < layers.size(); i++) {
+      const string& type = layers[i]->type();
+      if (type != "BatchNorm") { // && type != "MKLBatchNorm"
+        continue;
+      }
+      vector<shared_ptr<Blob<Dtype> > >& blobs = layers[i]->blobs();
+      for (int j = 0; j < blobs.size(); j++) {
+        caffe_set(blobs[j]->count(), Dtype(0),
+                  blobs[j]->mutable_cpu_data());
+      }
     }
   }
   
+  static void AddBNFromMsg(const shared_ptr<Net<Dtype> > dst_net,
+                             shared_ptr<Msg> m) {
+    for (int i = 0; i < m->num_blobs(); i++) {
+      const BlobInfo& bi = m->blob_info(i);
+
+      const string& layer_name = bi.blob_name();
+      const shared_ptr<Layer<Dtype> > l = dst_net->layer_by_name(layer_name);
+
+      CHECK(l != NULL) << "Cannot find layer: " << layer_name;
+
+      CHECK_EQ(l->blobs().size(), bi.msg_index_size());
+
+      for (int j = 0; j < l->blobs().size(); j++) {
+        shared_ptr<Blob<Dtype> > pblob = l->blobs()[j];
+        int m_idx = bi.msg_index(j);
+
+        CHECK_EQ(pblob->count() * sizeof(Dtype), m->ZmsgSize(m_idx));
+        caffe_axpy<Dtype>(pblob->count(), 1.0,
+                         reinterpret_cast<Dtype *>(m->ZmsgData(m_idx)),
+                         pblob->mutable_cpu_data());
+      }
+    }
+  }
+
   static void CopyDataFromNet(const shared_ptr<Net<Dtype> > dst_net,
                              const shared_ptr<Net<Dtype> > src_net,
                              int layer_id) {
@@ -316,31 +355,6 @@ class ParamHelper {
         caffe_axpy<Dtype>(pblob->count(), 1.0,
                          reinterpret_cast<Dtype *>(m->ZmsgData(m_idx)),
                          pblob->mutable_cpu_diff());
-      }
-    }
-  }
-
-  static void AddDataFromMsg(const shared_ptr<Net<Dtype> > dst_net,
-                             shared_ptr<Msg> m) {
-    for (int i = 0; i < m->num_blobs(); i++) {
-      const BlobInfo& bi = m->blob_info(i);
-
-      // a layer is stored as a blob in the message
-      const string& layer_name = bi.blob_name();
-      const shared_ptr<Layer<Dtype> > l = dst_net->layer_by_name(layer_name);
-
-      CHECK(l != NULL) << "Cannot find layer: " << layer_name;
-
-      CHECK_EQ(l->blobs().size(), bi.msg_index_size());
-
-      for (int j = 0; j < l->blobs().size(); j++) {
-        shared_ptr<Blob<Dtype> > pblob = l->blobs()[j];
-        int m_idx = bi.msg_index(j);
-
-        CHECK_EQ(pblob->count() * sizeof(Dtype), m->ZmsgSize(m_idx));
-        caffe_axpy<Dtype>(pblob->count(), 1.0,
-                         reinterpret_cast<Dtype *>(m->ZmsgData(m_idx)),
-                         pblob->mutable_cpu_data());
       }
     }
   }
