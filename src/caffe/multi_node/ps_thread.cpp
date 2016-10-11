@@ -42,20 +42,9 @@ int PSThread<Dtype>::UpdateParam(shared_ptr<Msg> m) {
 }
 
 template <typename Dtype>
-int PSThread<Dtype>::UpdateBN(shared_ptr<Msg> m) {
-
-  ParamHelper<Dtype>::AddBNFromMsg(ps_solver_->net(), m);
+void PSThread<Dtype>::UpdateBN(shared_ptr<Msg> m) {
   // do not scale here
-
-  // check mean and var
-
-  const BlobInfo& bi = m->blob_info(0);
-  const string& layer_name = bi.blob_name();
-  LOG(INFO) << "BN State 4......PS recv, before avg client, layer name: " << layer_name;
-//  LOG(INFO) << "num of blobs from msg:" << m->num_blobs() << ";should be 1";
-  ParamHelper<Dtype>::PrintBN(ps_solver_->net(), layer_name);
-
-  return 0;
+  ParamHelper<Dtype>::AddBNFromMsg(ps_solver_->net(), m);
 }
 
 template <typename Dtype>
@@ -68,18 +57,17 @@ void PSThread<Dtype>::AvgBN(const shared_ptr<Net<Dtype> > net,
     vector<shared_ptr<Blob<Dtype> > >& bn_blobs = layer->blobs();
     
     // check bn mean data
-    LOG(INFO) << "before avg client, layer idx:" << layer_id;
-    ParamHelper<Dtype>::PrintBN(net, layer_id);
+//    LOG(INFO) << "before avg client, layer idx:" << layer_id;
+//    ParamHelper<Dtype>::PrintBN(net, layer_id);
     
     for (int i = 0; i < bn_blobs.size(); i++) {
       caffe_scal(bn_blobs[i]->count(), (Dtype)(1.0 / (Dtype)num),
                  bn_blobs[i]->mutable_cpu_data());
     }
 
-    // check bn mean dat
-    LOG(INFO) << "after avg client, layer idx:" << layer_id;
-    ParamHelper<Dtype>::PrintBN(net, layer_id);
-    
+//    LOG(INFO) << "after avg client, layer idx:" << layer_id;
+//    ParamHelper<Dtype>::PrintBN(net, layer_id);
+
   }
 }
 
@@ -137,19 +125,15 @@ int PSThread<Dtype>::SendUpdates(int layer_id) {
       num_updates++;
     }
   }
-//  LOG(INFO) << "layer: " << layer_id <<", num update: " << num_updates << ", total size:" << pmsg_vec->size();
   if (num_updates > 0) {
-//    LOG(INFO) << "ps_layer_size: " << ps_solver_->net()->layers().size();
     AvgBN(ps_solver_->net(), num_updates, layer_id);
     
     ParamHelper<Dtype>::ScalDiff(ps_solver_->net(),
                                  (Dtype)(1.0 / (Dtype)num_updates),
                                  layer_id);
-    UpdateLayer(layer_id);
-    
-    // TODO: here send bn blobs to convs
-    
+    UpdateLayer(layer_id);    
     BroadcastLayer(layer_id);
+    // bn will be broadcast as well
     updated_layers_++;
   }
 

@@ -53,48 +53,7 @@ class ParamHelper {
                         dst_params[i]->mutable_cpu_diff());
     }
   }
-
-  static void SetBN(const shared_ptr<Net<Dtype> > net, 
-                      const vector<shared_ptr<Blob<Dtype> > >& bn_blobs,
-                      const vector<int>& bn_idx) {
-    for (int i = 0; i < bn_idx.size(); ++i) {
-      int layer_id = bn_idx[i];
-      vector<shared_ptr<Blob<Dtype> > >& dst_blobs = net->layers()[layer_id]->blobs();
-      shared_ptr<Blob<Dtype> > src_blobs = bn_blobs[i];
-      CHECK_EQ(dst_blobs.size(), 3);
-      const int count = dst_blobs[0]->count();
-      CHECK_EQ(src_blobs->count(), count * 2 + 1);
-      BlasCopy(count, src_blobs->cpu_data(), 
-               dst_blobs[0]->mutable_cpu_data());
-      BlasCopy(count, src_blobs->cpu_data()+count, 
-               dst_blobs[1]->mutable_cpu_data());
-      BlasCopy(1, src_blobs->cpu_data()+count*2, 
-                   dst_blobs[2]->mutable_cpu_data());
-    }
-  }
   
-  static void AddBN(const vector<shared_ptr<Blob<Dtype> > >& bn_blobs,
-                      const shared_ptr<Net<Dtype> > net, 
-                      const vector<int>& bn_idx) {
-    for (int i = 0; i < bn_idx.size(); ++i) {
-      int layer_id = bn_idx[i];
-      vector<shared_ptr<Blob<Dtype> > >& src_blobs = net->layers()[layer_id]->blobs();
-      shared_ptr<Blob<Dtype> > dst_blobs = bn_blobs[i];
-      CHECK_EQ(src_blobs.size(), 3);
-      const int count = src_blobs[0]->count();
-      CHECK_EQ(dst_blobs->count(), count * 2 + 1);
-      caffe_axpy<Dtype>(count, Dtype(1),
-                        src_blobs[0]->cpu_data(),
-                        dst_blobs->mutable_cpu_data());
-      caffe_axpy<Dtype>(count, Dtype(1),
-                        src_blobs[1]->cpu_data(),
-                        dst_blobs->mutable_cpu_data()+count);
-      caffe_axpy<Dtype>(1, Dtype(1),
-                        src_blobs[2]->cpu_data(),
-                        dst_blobs->mutable_cpu_data()+count*2);
-    }
-  }
-
   static void CopyBNFromMsg(const shared_ptr<Net<Dtype> > dst_net, 
                                     shared_ptr<Msg> m) {
     CopyParamFromMsg(dst_net, m, COPY_DATA);
@@ -159,43 +118,6 @@ class ParamHelper {
     }
   }
 
-  static void CopyDataFromNet(const shared_ptr<Net<Dtype> > dst_net,
-                             const shared_ptr<Net<Dtype> > src_net,
-                             int layer_id) {
-    shared_ptr<Layer<Dtype> > dst_layer = dst_net->layers()[layer_id];
-    vector<shared_ptr<Blob<Dtype> > >& dst_blobs = dst_layer->blobs();
-
-    shared_ptr<Layer<Dtype> > src_layer = src_net->layers()[layer_id];
-    vector<shared_ptr<Blob<Dtype> > >& src_blobs = src_layer->blobs();
-
-    CHECK_EQ(dst_blobs.size(), src_blobs.size());
-
-    for (int i = 0; i < src_blobs.size(); i++) {
-      CHECK_EQ(src_blobs[i]->count(), dst_blobs[i]->count());
-      BlasCopy(src_blobs[i]->count(), 
-               src_blobs[i]->cpu_data(),
-               dst_blobs[i]->mutable_cpu_data());
-    }
-  }
-  static void AddDataFromNet(const shared_ptr<Net<Dtype> > dst_net,
-                             const shared_ptr<Net<Dtype> > src_net,
-                             int layer_id) {
-    shared_ptr<Layer<Dtype> > dst_layer = dst_net->layers()[layer_id];
-    vector<shared_ptr<Blob<Dtype> > >& dst_blobs = dst_layer->blobs();
-
-    shared_ptr<Layer<Dtype> > src_layer = src_net->layers()[layer_id];
-    vector<shared_ptr<Blob<Dtype> > >& src_blobs = src_layer->blobs();
-
-    CHECK_EQ(dst_blobs.size(), src_blobs.size());
-
-    for (int i = 0; i < src_blobs.size(); i++) {
-      CHECK_EQ(src_blobs[i]->count(), dst_blobs[i]->count());
-      caffe_axpy<Dtype>(src_blobs[i]->count(), 1.0,
-                        src_blobs[i]->cpu_data(),
-                        dst_blobs[i]->mutable_cpu_data());
-    }
-  }
-
   static void PrintBNBlobs(const vector<shared_ptr<Blob<Dtype> > >& bn_blobs) {
     if (bn_blobs.size() < 3) {
       LOG(WARNING) << "no bn blobs";
@@ -217,33 +139,9 @@ class ParamHelper {
     PrintBNBlobs(net->layers()[layer_id]->blobs());
   }
 
-  static void PrintBN(const vector<shared_ptr<Blob<Dtype> > >& bn_blobs, int idx) {
-    const shared_ptr<Blob<Dtype> >  bn = bn_blobs[idx];
-    int count = (bn->count() - 1) / 2;
-    LOG(INFO) << "m[0]: " << bn->cpu_data()[0] 
-      << ", m[" << count-1 << "]: " << bn->cpu_data()[count-1];
-    LOG(INFO) << "v[0]: " << bn->cpu_data()[count] 
-      << ", v[" << count-1 << "]: " << bn->cpu_data()[count*2-1];
-    LOG(INFO) << "f[0]: " << bn->cpu_data()[count*2];
-
-  }
-
   static void PrintBN(const shared_ptr<Net<Dtype> > net, const string& layer_name) {
     const shared_ptr<Layer<Dtype> > bn = net->layer_by_name(layer_name);
     PrintBNBlobs(bn->blobs());
-  }
-
-  static void ScalData(const shared_ptr<Net<Dtype> > net,
-                       Dtype factor,
-                       int layer_id) {
-    shared_ptr<Layer<Dtype> > l = net->layers()[layer_id];
-    vector<shared_ptr<Blob<Dtype> > >& layer_blobs = l->blobs();
-
-    for (int i = 0; i < layer_blobs.size(); i++) {
-      caffe_scal(layer_blobs[i]->count(),
-                 factor,
-                 layer_blobs[i]->mutable_cpu_data());
-    }
   }
 
   static void AddDiffFromNet(const shared_ptr<Net<Dtype> > dst_net,
@@ -482,21 +380,6 @@ class ParamHelper {
       BlasCopy(src_blob->count(),
                src_blob->cpu_data(),
                dst_blob->mutable_cpu_data());
-    }
-  }
-
-  static void CopyDataFromNet(const shared_ptr<Net<Dtype> > dst_net,
-                              const shared_ptr<Net<Dtype> > src_net) {
-    const vector<Blob<Dtype>*>& src_params = src_net->learnable_params();
-    const vector<Blob<Dtype>*>& dst_params = dst_net->learnable_params();
-
-    CHECK_EQ(src_params.size(), dst_params.size());
-
-    for (int i = 0; i < src_params.size(); i++) {
-      CHECK_EQ(src_params[i]->count(), dst_params[i]->count());
-      BlasCopy(dst_params[i]->count(),
-               src_params[i]->cpu_data(),
-               dst_params[i]->mutable_cpu_data());
     }
   }
 

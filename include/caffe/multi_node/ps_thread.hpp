@@ -56,7 +56,8 @@ class PSThread : public WorkerThread<Dtype> {
   // return true if we are ready to broadcast the parameter to clients
   int UpdateParam(shared_ptr<Msg> m);
 
-  int UpdateBN(shared_ptr<Msg> m);
+  void UpdateBN(shared_ptr<Msg> m);
+  
   void AvgBN(const shared_ptr<Net<Dtype> > net, int num, int layer_id);
 
   void SendParam(shared_ptr<Net<Dtype> > net,
