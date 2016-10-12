@@ -53,20 +53,20 @@ class ParamHelper {
                         dst_params[i]->mutable_cpu_diff());
     }
   }
-  
-  static void CopyBNFromMsg(const shared_ptr<Net<Dtype> > dst_net, 
+
+  static void CopyBNFromMsg(const shared_ptr<Net<Dtype> > dst_net,
                                     shared_ptr<Msg> m) {
     CopyParamFromMsg(dst_net, m, COPY_DATA);
   }
 
-  static void CopyBNToMsg(const shared_ptr<Net<Dtype> > src_net, 
+  static void CopyBNToMsg(const shared_ptr<Net<Dtype> > src_net,
                                  shared_ptr<Msg> m) {
     const vector<shared_ptr<Layer<Dtype> > >& layers = src_net->layers();
     const vector<string>& layer_names = src_net->layer_names();
     for (int i = 0; i < layer_names.size(); i++) {
       const string& layer_name = layer_names[i];
       const string& type = layers[i]->type();
-      if (type != "BatchNorm") { // && type != "MKLBatchNorm"
+      if (type != "BatchNorm") {  // && type != "MKLBatchNorm"
         continue;
       }
       const shared_ptr<Layer<Dtype> > l = src_net->layer_by_name(layer_name);
@@ -83,7 +83,7 @@ class ParamHelper {
     const vector<shared_ptr<Layer<Dtype> > >& layers = net->layers();
     for (int i = 0; i < layers.size(); i++) {
       const string& type = layers[i]->type();
-      if (type != "BatchNorm") { // && type != "MKLBatchNorm"
+      if (type != "BatchNorm") {  // && type != "MKLBatchNorm"
         continue;
       }
       vector<shared_ptr<Blob<Dtype> > >& blobs = layers[i]->blobs();
@@ -93,7 +93,7 @@ class ParamHelper {
       }
     }
   }
-  
+
   static void AddBNFromMsg(const shared_ptr<Net<Dtype> > dst_net,
                              shared_ptr<Msg> m) {
     for (int i = 0; i < m->num_blobs(); i++) {
@@ -126,20 +126,21 @@ class ParamHelper {
     const shared_ptr<Blob<Dtype> >  m = bn_blobs[0];
     const shared_ptr<Blob<Dtype> >  v = bn_blobs[1];
     const shared_ptr<Blob<Dtype> >  f = bn_blobs[2];
-    
-    LOG(INFO) << "m[0]: " << m->cpu_data()[0] 
+
+    LOG(INFO) << "m[0]: " << m->cpu_data()[0]
       << ", m[" << m->count()-1 << "]: " << m->cpu_data()[m->count()-1];
-    LOG(INFO) << "v[0]: " << v->cpu_data()[0] 
+    LOG(INFO) << "v[0]: " << v->cpu_data()[0]
       << ", v[" << v->count()-1 << "]: " << v->cpu_data()[v->count()-1];
     LOG(INFO) << "f[0]: " << f->cpu_data()[0]
       << ", f[" << f->count()-1 << "]: " << f->cpu_data()[f->count()-1];
   }
-  
+
   static void PrintBN(const shared_ptr<Net<Dtype> > net, int layer_id) {
     PrintBNBlobs(net->layers()[layer_id]->blobs());
   }
 
-  static void PrintBN(const shared_ptr<Net<Dtype> > net, const string& layer_name) {
+  static void PrintBN(const shared_ptr<Net<Dtype> > net,
+                          const string& layer_name) {
     const shared_ptr<Layer<Dtype> > bn = net->layer_by_name(layer_name);
     PrintBNBlobs(bn->blobs());
   }
@@ -363,7 +364,6 @@ class ParamHelper {
     return CopyParamFromMsg(net, m, COPY_DATA);
   }
 
-
   static void CopyHistoryFromSolver(SGDSolver<Dtype> *dst_solver,
                                     SGDSolver<Dtype> *src_solver) {
     const vector<shared_ptr<Blob<Dtype> > >& src_hist = src_solver->history();
@@ -380,6 +380,21 @@ class ParamHelper {
       BlasCopy(src_blob->count(),
                src_blob->cpu_data(),
                dst_blob->mutable_cpu_data());
+    }
+  }
+
+  static void CopyDataFromNet(const shared_ptr<Net<Dtype> > dst_net,
+                              const shared_ptr<Net<Dtype> > src_net) {
+    const vector<Blob<Dtype>*>& src_params = src_net->learnable_params();
+    const vector<Blob<Dtype>*>& dst_params = dst_net->learnable_params();
+
+    CHECK_EQ(src_params.size(), dst_params.size());
+
+    for (int i = 0; i < src_params.size(); i++) {
+      CHECK_EQ(src_params[i]->count(), dst_params[i]->count());
+      BlasCopy(dst_params[i]->count(),
+               src_params[i]->cpu_data(),
+               dst_params[i]->mutable_cpu_data());
     }
   }
 

@@ -52,14 +52,12 @@ void PSThread<Dtype>::AvgBN(const shared_ptr<Net<Dtype> > net,
                                int num, int layer_id) {
   shared_ptr<Layer<Dtype> > layer = net->layers()[layer_id];
   const std::string& type = layer->type();
-  
-  if (type == "BatchNorm") { // || type == "MKLBatchNorm"
+  if (type == "BatchNorm") {  // || type == "MKLBatchNorm"
     vector<shared_ptr<Blob<Dtype> > >& bn_blobs = layer->blobs();
-    
-    // check bn mean data
+
 //    LOG(INFO) << "before avg client, layer idx:" << layer_id;
 //    ParamHelper<Dtype>::PrintBN(net, layer_id);
-    
+
     for (int i = 0; i < bn_blobs.size(); i++) {
       caffe_scal(bn_blobs[i]->count(), (Dtype)(1.0 / (Dtype)num),
                  bn_blobs[i]->mutable_cpu_data());
@@ -67,7 +65,6 @@ void PSThread<Dtype>::AvgBN(const shared_ptr<Net<Dtype> > net,
 
 //    LOG(INFO) << "after avg client, layer idx:" << layer_id;
 //    ParamHelper<Dtype>::PrintBN(net, layer_id);
-
   }
 }
 
@@ -127,13 +124,13 @@ int PSThread<Dtype>::SendUpdates(int layer_id) {
   }
   if (num_updates > 0) {
     AvgBN(ps_solver_->net(), num_updates, layer_id);
-    
+
     ParamHelper<Dtype>::ScalDiff(ps_solver_->net(),
                                  (Dtype)(1.0 / (Dtype)num_updates),
                                  layer_id);
-    UpdateLayer(layer_id);    
+    UpdateLayer(layer_id);
     BroadcastLayer(layer_id);
-    // bn will be broadcast as well
+    // bn blobs will be broadcast as well
     updated_layers_++;
   }
 

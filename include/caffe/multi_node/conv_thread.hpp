@@ -76,7 +76,7 @@ class ConvThread : public WorkerThread<Dtype> {
 
   // check if has bn layers
   bool HasBNLayers(shared_ptr<Net<Dtype> > net);
-  
+
  protected:
   typedef unordered_map<int64_t, shared_ptr<vector<shared_ptr<Msg> > > >
                                                                       MsgMap;
@@ -88,7 +88,7 @@ class ConvThread : public WorkerThread<Dtype> {
 
   // has bn layers
   bool has_bn_layers_;
-  
+
   // index of bn layers
   vector<int> bn_layers_idx_;
 
@@ -118,7 +118,6 @@ class ConvParamThread : public WorkerThread<Dtype> {
     ps_updates_.resize(ps_ids_.size());
 
     // init PS maps
-    LOG(INFO) << "ps_idx size: " << ps_ids_.size();
     for (int i = 0; i < ps_ids_.size(); i++) {
       ps_id_map_[ps_ids_[i]] = i;
       const vector<string>& ps_layers =

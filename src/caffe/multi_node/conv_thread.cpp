@@ -75,13 +75,13 @@ void ConvThread<Dtype>::ConvForward() {
   shared_ptr<Net<Dtype> > conv_net = pconv->net();
   conv_net->ClearParamDiffs();
 
-  LOG(INFO) << "bn_conv before FW";
-  ParamHelper<Dtype>::PrintBN(conv_net, bn_layers_idx_[0]);
-  
+//  LOG(INFO) << "bn_conv before FW";
+//  ParamHelper<Dtype>::PrintBN(conv_net, bn_layers_idx_[0]);
+
   conv_net->ForwardPrefilled();
 
-  LOG(INFO) << "bn_conv after FW";
-  ParamHelper<Dtype>::PrintBN(conv_net, bn_layers_idx_[0]);
+//  LOG(INFO) << "bn_conv after FW";
+//  ParamHelper<Dtype>::PrintBN(conv_net, bn_layers_idx_[0]);
 
   // notify the param thread
   shared_ptr<Msg> m(new Msg());
@@ -95,7 +95,6 @@ void ConvThread<Dtype>::ConvForward() {
   m->AppendData(&pconv, sizeof(pconv));
 
   this->SendMsg(m);
-
   NodeEnv::Instance()->PutSolver(conv_id, pconv);
 }
 
@@ -172,12 +171,10 @@ void ConvThread<Dtype>::SyncedBackward(WorkerSolver<Dtype> *prev_solver,
   for (int i = prev_idx - 1; i >= 0; i--) {
     if (prev_solver != NULL) {
       prev_solver->net()->BackwardFromTo(i, i);
-
       ParamHelper<Dtype>::AddDiffFromNet(param_net, prev_solver->net(), i);
     }
 
     conv_net->BackwardFromTo(i, i);
-
     ParamHelper<Dtype>::AddDiffFromNet(param_net, conv_net, i);
     ParamHelper<Dtype>::ScalDiff(param_net, (Dtype)(1.0 / num_sub_solvers_), i);
 
@@ -210,7 +207,7 @@ bool ConvThread<Dtype>::HasBNLayers(shared_ptr<Net<Dtype> > net) {
   const vector<shared_ptr<Layer<Dtype> > >& layers = net->layers();
   for (int i = 0; i < layers.size(); i++) {
     const std::string& type = layers[i]->type();
-    if (type == "BatchNorm") { // || type == "MKLBatchNorm"
+    if (type == "BatchNorm") {  // || type == "MKLBatchNorm"
         bn_layers_idx_.push_back(i);
     }
   }
@@ -238,7 +235,6 @@ void ConvThread<Dtype>::Run() {
   LOG(INFO) << "bn_layer_size:" << bn_layers_idx_.size();
 
   while (!this->must_stop()) {
-
     LOG(INFO) << "root_bn before update";
     ParamHelper<Dtype>::PrintBN(root_solver->net(), bn_layers_idx_[0]);
 
@@ -248,7 +244,7 @@ void ConvThread<Dtype>::Run() {
 
     LOG(INFO) << "root_bn after FW";
     ParamHelper<Dtype>::PrintBN(root_solver->net(), bn_layers_idx_[0]);
-        
+
     if (has_bn_layers_) {
       SendBN();
     }
@@ -314,6 +310,9 @@ void ConvThread<Dtype>::Run() {
       NodeEnv::Instance()->PushFreeSolver(prev_solver);
     }
 
+    // ParamHelper<Dtype>::ScalDiff(param_solver_->net(), (Dtype)0.25);
+    // ParamHelper<Dtype>::PrintDiff(param_solver_->net());
+
     param_solver_->net()->ClearParamDiffs();
 
     // waiting for parameter update
@@ -327,7 +326,6 @@ void ConvThread<Dtype>::Run() {
 
     LOG(INFO) << "root_bn after update";
     ParamHelper<Dtype>::PrintBN(root_solver->net(), bn_layers_idx_[0]);
-
   }
 }
 
@@ -372,8 +370,8 @@ void ConvParamThread<Dtype>::SyncBN() {
   SGDSolver<Dtype> *root_solver = NULL;
   root_solver = (SGDSolver<Dtype> *) NodeEnv::Instance()->GetRootSolver();
   shared_ptr<Net<Dtype> > root_net = root_solver->net();
-  
-  // Put BN to PS
+
+  // Sync BN to PS
   int ps_id = NodeEnv::Instance()->ps_ids()[0];
   shared_ptr<Msg> ps_msg(new Msg());
   ps_msg->set_type(PUT_BN);
@@ -389,7 +387,6 @@ void ConvParamThread<Dtype>::SyncBN() {
 
   LOG(INFO) << "send to ps";
   ParamHelper<Dtype>::PrintBN(root_solver->net(), 2);
-  
 }
 
 template <typename Dtype>
@@ -460,13 +457,12 @@ void ConvParamThread<Dtype>::SendActivations() {
   shared_ptr<vector<shared_ptr<Msg> > > pvec;
   pvec.reset(new vector<shared_ptr<Msg> >(fwd_msgs_));
   conv_id_to_vec_[conv_id] = pvec;
-
 }
 
 template <typename Dtype>
 void ConvParamThread<Dtype>::ProcessForward(shared_ptr<Msg> m) {
   fwd_msgs_.push_back(m);
-  
+
   if (fwd_msgs_.size() == this->GetWorkerNum()) {
     SendActivations();
     fwd_msgs_.clear();
@@ -612,8 +608,7 @@ int ConvParamThread<Dtype>::UpdateParam(shared_ptr<Msg> m) {
   // clear the gradients of root net
   root_net->ClearParamDiffs();
 
-  // TODO: clear the bn blobs ?
-  
+  // do not need clear bn blobs since update by copy
 
   // notify the worker threads
   shared_ptr<Msg> notify(new Msg());
