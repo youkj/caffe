@@ -45,6 +45,7 @@ template <typename Dtype>
 void PSThread<Dtype>::UpdateBN(shared_ptr<Msg> m) {
   // do not scale here
   ParamHelper<Dtype>::AddBNFromMsg(ps_solver_->net(), m);
+  LOG(INFO) << "Recv BN Blobs from " << m->src();
 }
 
 template <typename Dtype>
@@ -62,9 +63,11 @@ void PSThread<Dtype>::AvgBN(const shared_ptr<Net<Dtype> > net,
       caffe_scal(bn_blobs[i]->count(), (Dtype)(1.0 / (Dtype)num),
                  bn_blobs[i]->mutable_cpu_data());
     }
+    LOG(INFO) << "Averaged BN layer " << net->layer_names()[layer_id];
 
 //    LOG(INFO) << "after avg client, layer idx:" << layer_id;
 //    ParamHelper<Dtype>::PrintBN(net, layer_id);
+    
   }
 }
 
@@ -146,6 +149,7 @@ int PSThread<Dtype>::SendUpdates(int layer_id) {
 
     // clear bn blobs
     ParamHelper<Dtype>::ClearBNBlobs(ps_solver_->net());
+    LOG(INFO) << "Cleared BN blobs";
 
     updated_layers_ = 0;
     iter_++;

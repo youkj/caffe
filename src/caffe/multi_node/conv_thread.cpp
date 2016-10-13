@@ -235,15 +235,15 @@ void ConvThread<Dtype>::Run() {
   LOG(INFO) << "bn_layer_size:" << bn_layers_idx_.size();
 
   while (!this->must_stop()) {
-    LOG(INFO) << "root_bn before update";
-    ParamHelper<Dtype>::PrintBN(root_solver->net(), bn_layers_idx_[0]);
+//    LOG(INFO) << "root_bn before update";
+//    ParamHelper<Dtype>::PrintBN(root_solver->net(), bn_layers_idx_[0]);
 
     for (int i = 0; i < num_sub_solvers_; i++) {
       ConvForward();
     }
 
-    LOG(INFO) << "root_bn after FW";
-    ParamHelper<Dtype>::PrintBN(root_solver->net(), bn_layers_idx_[0]);
+//    LOG(INFO) << "root_bn after FW";
+//    ParamHelper<Dtype>::PrintBN(root_solver->net(), bn_layers_idx_[0]);
 
     if (has_bn_layers_) {
       SendBN();
@@ -324,8 +324,8 @@ void ConvThread<Dtype>::Run() {
       m = this->RecvMsg(true);
     }
 
-    LOG(INFO) << "root_bn after update";
-    ParamHelper<Dtype>::PrintBN(root_solver->net(), bn_layers_idx_[0]);
+//    LOG(INFO) << "root_bn after update";
+//    ParamHelper<Dtype>::PrintBN(root_solver->net(), bn_layers_idx_[0]);
   }
 }
 
