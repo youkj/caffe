@@ -1,0 +1,16 @@
+net: "models/googlenet_v2/train_val.prototxt"
+test_iter: 1 #1000
+test_interval: 1000000000 #100  #4000
+test_initialization: false
+display: 100
+average_loss: 40
+base_lr: 0.08 # 0.01
+lr_policy: "step"
+stepsize: 800 # 32k
+gamma: 0.96
+max_iter: 60000 # 1000w 
+momentum: 0.9
+weight_decay: 0.0002
+snapshot: 500
+snapshot_prefix: "models/googlenet_v2/googlenet_v2"
+solver_mode: CPU
